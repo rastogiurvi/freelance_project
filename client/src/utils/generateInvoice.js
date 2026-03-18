@@ -1,0 +1,143 @@
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
+const generateInvoice = (client, payments, freelancerName) => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    // ── HEADER BACKGROUND ──────────────────────────
+    doc.setFillColor(29, 78, 216);
+    doc.rect(0, 0, pageWidth, 45, 'F');
+
+    // ── TITLE ──────────────────────────────────────
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(26);
+    doc.setFont('helvetica', 'bold');
+    doc.text('INVOICE', 14, 20);
+
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Freelancer Platform', 14, 30);
+    doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 38);
+
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`INV-${Date.now().toString().slice(-6)}`, pageWidth - 14, 20, { align: 'right' });
+
+    // ── CLIENT INFO ────────────────────────────────
+    doc.setTextColor(0, 0, 0);
+    doc.setFillColor(240, 246, 255);
+    doc.rect(0, 50, pageWidth, 35, 'F');
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(100, 100, 100);
+    doc.text('BILLED TO', 14, 60);
+    doc.text('FROM', pageWidth / 2, 60);
+
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 0, 0);
+    doc.text(client.name, 14, 70);
+    doc.text(freelancerName, pageWidth / 2, 70);
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text(client.email || '', 14, 78);
+    doc.text('via Freelancer Platform', pageWidth / 2, 78);
+
+    // ── PAYMENTS TABLE ─────────────────────────────
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 0, 0);
+    doc.text('Payment Details', 14, 98);
+
+    const tableRows = payments.map((p, index) => [
+        index + 1,
+        p.description || 'Service Payment',
+        new Date(p.date).toLocaleDateString(),
+        p.status,
+        `Rs. ${p.amount}`,
+    ]);
+
+    // ← KEY FIX: use autoTable(doc, ...) instead of doc.autoTable(...)
+    autoTable(doc, {
+        startY: 103,
+        head: [['#', 'Description', 'Date', 'Status', 'Amount']],
+        body: tableRows,
+        headStyles: {
+            fillColor: [29, 78, 216],
+            textColor: 255,
+            fontStyle: 'bold',
+            fontSize: 11,
+        },
+        bodyStyles: {
+            fontSize: 10,
+            textColor: [50, 50, 50],
+        },
+        alternateRowStyles: {
+            fillColor: [240, 246, 255],
+        },
+        columnStyles: {
+            0: { cellWidth: 12, halign: 'center' },
+            4: { halign: 'right', fontStyle: 'bold' },
+        },
+        styles: {
+            cellPadding: 5,
+            lineColor: [200, 200, 200],
+            lineWidth: 0.3,
+        },
+    });
+
+    // ── TOTALS ─────────────────────────────────────
+    const finalY = doc.lastAutoTable.finalY + 10;
+
+    const totalPaid    = payments.filter(p => p.status === 'Paid').reduce((sum, p) => sum + p.amount, 0);
+    const totalPending = payments.filter(p => p.status === 'Pending').reduce((sum, p) => sum + p.amount, 0);
+    const totalOverdue = payments.filter(p => p.status === 'Overdue').reduce((sum, p) => sum + p.amount, 0);
+    const grandTotal   = payments.reduce((sum, p) => sum + p.amount, 0);
+
+    doc.setFillColor(240, 246, 255);
+    doc.rect(pageWidth - 90, finalY - 5, 76, 52, 'F');
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text('Total Paid:',    pageWidth - 88, finalY + 5);
+    doc.text('Total Pending:', pageWidth - 88, finalY + 15);
+    doc.text('Total Overdue:', pageWidth - 88, finalY + 25);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(22, 163, 74);
+    doc.text(`Rs. ${totalPaid}`,    pageWidth - 14, finalY + 5,  { align: 'right' });
+    doc.setTextColor(202, 138, 4);
+    doc.text(`Rs. ${totalPending}`, pageWidth - 14, finalY + 15, { align: 'right' });
+    doc.setTextColor(220, 38, 38);
+    doc.text(`Rs. ${totalOverdue}`, pageWidth - 14, finalY + 25, { align: 'right' });
+
+    doc.setDrawColor(29, 78, 216);
+    doc.setLineWidth(0.5);
+    doc.line(pageWidth - 88, finalY + 30, pageWidth - 14, finalY + 30);
+
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(29, 78, 216);
+    doc.text('Grand Total:',      pageWidth - 88, finalY + 40);
+    doc.text(`Rs. ${grandTotal}`, pageWidth - 14, finalY + 40, { align: 'right' });
+
+    // ── FOOTER ─────────────────────────────────────
+    doc.setFillColor(29, 78, 216);
+    doc.rect(0, 275, pageWidth, 22, 'F');
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(255, 255, 255);
+    doc.text('Thank you for your business!',        pageWidth / 2, 284, { align: 'center' });
+    doc.text('Generated by Freelancer Platform',    pageWidth / 2, 291, { align: 'center' });
+
+    // ── SAVE ───────────────────────────────────────
+    doc.save(`Invoice_${client.name}_${Date.now()}.pdf`);
+};
+
+export default generateInvoice;
