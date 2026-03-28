@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid,
     Tooltip, ResponsiveContainer, PieChart, Pie,
-    Cell, LineChart, Line, Legend
+    Cell, LineChart, Line, Legend, Area, AreaChart
 } from 'recharts';
 
 function Dashboard() {
@@ -21,6 +21,7 @@ function Dashboard() {
     const [loading, setLoading] = useState(true);
     const [notifications, setNotifications] = useState([]);
     const [showNotifications, setShowNotifications] = useState(false);
+    const [monthlyData, setMonthlyData] = useState([]); // ✅ NEW
 
     const getGreeting = () => {
         const h = new Date().getHours();
@@ -39,11 +40,12 @@ function Dashboard() {
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const [clientsRes, tasksRes, paymentsRes, summaryRes] = await Promise.all([
+                const [clientsRes, tasksRes, paymentsRes, summaryRes, monthlyRes] = await Promise.all([
                     axios.get('/clients'),
                     axios.get('/tasks'),
                     axios.get('/payments'),
                     axios.get('/payments/summary'),
+                    axios.get('/payments/monthly'), // ✅ NEW
                 ]);
 
                 setStats({
@@ -57,8 +59,8 @@ function Dashboard() {
                 setAllTasks(tasksRes.data);
                 setTasks(tasksRes.data.filter(t => t.status !== 'Done').slice(0, 5));
                 setRecentPayments(paymentsRes.data.slice(0, 4));
+                setMonthlyData(monthlyRes.data); // ✅ NEW
 
-                // Smart notifications
                 const notifs = [];
                 const overdueTasks = tasksRes.data.filter(t =>
                     t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'Done'
@@ -86,7 +88,6 @@ function Dashboard() {
         fetchData();
     }, []);
 
-    // Chart Data
     const taskStatusData = [
         { name: 'To-Do', value: allTasks.filter(t => t.status === 'To-Do').length, color: '#94A3B8' },
         { name: 'In Progress', value: allTasks.filter(t => t.status === 'In Progress').length, color: '#3B82F6' },
@@ -99,17 +100,18 @@ function Dashboard() {
         { name: 'Overdue', amount: stats.totalOverdue, fill: '#EF4444' },
     ];
 
-    const taskPriorityData = [
-        { name: 'High', value: allTasks.filter(t => t.priority === 'High').length, color: '#EF4444' },
-        { name: 'Medium', value: allTasks.filter(t => t.priority === 'Medium').length, color: '#F59E0B' },
-        { name: 'Low', value: allTasks.filter(t => t.priority === 'Low').length, color: '#10B981' },
-    ];
-
-    // Task completion progress
     const completedTasks = allTasks.filter(t => t.status === 'Done').length;
     const progressPercent = allTasks.length > 0
         ? Math.round((completedTasks / allTasks.length) * 100)
         : 0;
+
+    // ✅ NEW: calculate trend vs last month
+    const currentMonthEarned = monthlyData[monthlyData.length - 1]?.earned || 0;
+    const lastMonthEarned = monthlyData[monthlyData.length - 2]?.earned || 0;
+    const trendPercent = lastMonthEarned === 0
+        ? 100
+        : Math.round(((currentMonthEarned - lastMonthEarned) / lastMonthEarned) * 100);
+    const trendUp = trendPercent >= 0;
 
     const priorityColor = (p) => ({
         'High': 'bg-red-100 text-red-600',
@@ -133,12 +135,25 @@ function Dashboard() {
         'error': '🚨', 'warning': '⚠️', 'info': 'ℹ️'
     }[type]);
 
+    // ✅ Custom tooltip for monthly chart
+    const MonthlyTooltip = ({ active, payload, label }) => {
+        if (active && payload && payload.length) {
+            return (
+                <div className="px-4 py-3 bg-white border border-gray-100 shadow-xl rounded-2xl">
+                    <p className="mb-1 text-xs font-bold text-gray-500">{label}</p>
+                    <p className="text-base font-black text-purple-600">₹{payload[0].value.toLocaleString('en-IN')}</p>
+                </div>
+            );
+        }
+        return null;
+    };
+
     return (
         <div className="flex min-h-screen bg-gray-50">
             <Sidebar />
             <div className="flex-1 p-8 ml-64">
 
-                {/* ── HEADER ─────────────────────────── */}
+                {/* HEADER */}
                 <div className="flex items-center justify-between mb-8">
                     <div>
                         <p className="mb-1 text-sm font-medium text-blue-500">
@@ -149,7 +164,6 @@ function Dashboard() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                        {/* Notifications Bell */}
                         <div className="relative">
                             <button
                                 onClick={() => setShowNotifications(!showNotifications)}
@@ -165,7 +179,6 @@ function Dashboard() {
                                 )}
                             </button>
 
-                            {/* Notification Dropdown */}
                             {showNotifications && (
                                 <div className="absolute right-0 z-50 overflow-hidden bg-white border border-gray-100 shadow-xl top-12 w-80 rounded-2xl">
                                     <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
@@ -196,7 +209,6 @@ function Dashboard() {
                             )}
                         </div>
 
-                        {/* Health Score */}
                         <div className="px-5 py-3 text-center bg-white border border-gray-100 shadow-sm rounded-xl">
                             <p className="text-xs font-medium text-gray-400">Platform Health</p>
                             <p className={`text-lg font-black mt-0.5 ${
@@ -219,7 +231,7 @@ function Dashboard() {
                     </div>
                 ) : (
                     <>
-                        {/* ── STATS CARDS ─────────────────── */}
+                        {/* STATS CARDS */}
                         <div className="grid grid-cols-2 gap-4 mb-6 md:grid-cols-4">
                             {[
                                 { label: 'Total Clients', value: stats.totalClients, icon: '👥', color: 'text-blue-600', bg: 'bg-blue-50', tag: 'Clients', tagColor: 'text-blue-500 bg-blue-50' },
@@ -244,7 +256,7 @@ function Dashboard() {
                             ))}
                         </div>
 
-                        {/* ── TASK PROGRESS BAR ───────────── */}
+                        {/* TASK PROGRESS BAR */}
                         <div className="p-6 mb-6 bg-white border border-gray-100 shadow-sm rounded-2xl">
                             <div className="flex items-center justify-between mb-3">
                                 <div>
@@ -279,7 +291,7 @@ function Dashboard() {
                             </div>
                         </div>
 
-                        {/* ── ALERT BANNER ────────────────── */}
+                        {/* ALERT BANNER */}
                         {stats.totalOverdue > 0 && (
                             <div className="flex items-center gap-3 p-4 mb-6 border border-red-200 bg-red-50 rounded-2xl">
                                 <span className="text-2xl">🚨</span>
@@ -293,10 +305,77 @@ function Dashboard() {
                             </div>
                         )}
 
-                        {/* ── CHARTS ROW ──────────────────── */}
+                        {/* ✅ NEW: MONTHLY REVENUE TREND CHART */}
+                        <div className="p-6 mb-6 bg-white border border-gray-100 shadow-sm rounded-2xl">
+                            <div className="flex items-center justify-between mb-1">
+                                <div>
+                                    <h3 className="font-bold text-gray-800">📈 Monthly Revenue Trend</h3>
+                                    <p className="text-xs text-gray-400 mt-0.5">Earnings over the last 6 months</p>
+                                </div>
+                                <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-bold ${
+                                    trendUp ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'
+                                }`}>
+                                    <span>{trendUp ? '↑' : '↓'}</span>
+                                    <span>{Math.abs(trendPercent)}% vs last month</span>
+                                </div>
+                            </div>
+
+                            {/* Summary row */}
+                            <div className="flex gap-6 mt-3 mb-4">
+                                <div>
+                                    <p className="text-xs text-gray-400">This Month</p>
+                                    <p className="text-lg font-black text-purple-600">₹{currentMonthEarned.toLocaleString('en-IN')}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-gray-400">Last Month</p>
+                                    <p className="text-lg font-black text-gray-500">₹{lastMonthEarned.toLocaleString('en-IN')}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-gray-400">6-Month Total</p>
+                                    <p className="text-lg font-black text-gray-800">
+                                        ₹{monthlyData.reduce((sum, m) => sum + m.earned, 0).toLocaleString('en-IN')}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <ResponsiveContainer width="100%" height={220}>
+                                <AreaChart data={monthlyData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                                    <defs>
+                                        <linearGradient id="earningsGradient" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.2} />
+                                            <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0} />
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
+                                    <XAxis
+                                        dataKey="month"
+                                        tick={{ fontSize: 12, fill: '#94A3B8' }}
+                                        axisLine={false}
+                                        tickLine={false}
+                                    />
+                                    <YAxis
+                                        tick={{ fontSize: 12, fill: '#94A3B8' }}
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tickFormatter={(v) => `₹${v}`}
+                                    />
+                                    <Tooltip content={<MonthlyTooltip />} />
+                                    <Area
+                                        type="monotone"
+                                        dataKey="earned"
+                                        stroke="#8B5CF6"
+                                        strokeWidth={3}
+                                        fill="url(#earningsGradient)"
+                                        dot={{ fill: '#8B5CF6', strokeWidth: 2, r: 5 }}
+                                        activeDot={{ r: 7, fill: '#8B5CF6' }}
+                                    />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        </div>
+
+                        {/* CHARTS ROW */}
                         <div className="grid grid-cols-1 gap-6 mb-6 md:grid-cols-3">
 
-                            {/* Payment Bar Chart */}
                             <div className="p-6 bg-white border border-gray-100 shadow-sm md:col-span-2 rounded-2xl">
                                 <h3 className="mb-1 font-bold text-gray-800">Payment Overview</h3>
                                 <p className="mb-4 text-xs text-gray-400">Earned vs Pending vs Overdue</p>
@@ -318,7 +397,6 @@ function Dashboard() {
                                 </ResponsiveContainer>
                             </div>
 
-                            {/* Task Pie Chart */}
                             <div className="p-6 bg-white border border-gray-100 shadow-sm rounded-2xl">
                                 <h3 className="mb-1 font-bold text-gray-800">Task Status</h3>
                                 <p className="mb-2 text-xs text-gray-400">Distribution by status</p>
@@ -363,10 +441,8 @@ function Dashboard() {
                             </div>
                         </div>
 
-                        {/* ── PRIORITY PIE + PENDING TASKS ── */}
+                        {/* PENDING TASKS + RECENT PAYMENTS */}
                         <div className="grid grid-cols-1 gap-6 mb-6 md:grid-cols-2">
-
-                            {/* Pending Tasks */}
                             <div className="p-6 bg-white border border-gray-100 shadow-sm rounded-2xl">
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="font-bold text-gray-800">📋 Pending Tasks</h3>
@@ -402,7 +478,6 @@ function Dashboard() {
                                 )}
                             </div>
 
-                            {/* Recent Payments */}
                             <div className="p-6 bg-white border border-gray-100 shadow-sm rounded-2xl">
                                 <div className="flex items-center justify-between mb-4">
                                     <h3 className="font-bold text-gray-800">💳 Recent Payments</h3>
@@ -420,9 +495,7 @@ function Dashboard() {
                                                 💰
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-medium text-gray-800 truncate">
-                                                    {payment.client?.name}
-                                                </p>
+                                                <p className="text-sm font-medium text-gray-800 truncate">{payment.client?.name}</p>
                                                 <p className="text-xs text-gray-400">
                                                     {payment.description || 'Service Payment'} · {new Date(payment.date).toLocaleDateString()}
                                                 </p>
@@ -443,7 +516,7 @@ function Dashboard() {
                             </div>
                         </div>
 
-                        {/* ── QUICK ACTIONS ───────────────── */}
+                        {/* QUICK ACTIONS */}
                         <div className="p-6 bg-white border border-gray-100 shadow-sm rounded-2xl">
                             <h3 className="mb-4 text-base font-bold text-gray-800">⚡ Quick Actions</h3>
                             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
