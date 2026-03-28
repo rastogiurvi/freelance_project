@@ -3,36 +3,41 @@ import { Link } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import axios from '../api/axios';
 import { useAuth } from '../context/AuthContext';
+import {
+    BarChart, Bar, XAxis, YAxis, CartesianGrid,
+    Tooltip, ResponsiveContainer, PieChart, Pie,
+    Cell, LineChart, Line, Legend
+} from 'recharts';
 
 function Dashboard() {
     const { user } = useAuth();
     const [stats, setStats] = useState({
-        totalClients: 0,
-        totalTasks: 0,
-        totalEarned: 0,
-        totalPending: 0,
-        totalOverdue: 0,
+        totalClients: 0, totalTasks: 0,
+        totalEarned: 0, totalPending: 0, totalOverdue: 0,
     });
     const [tasks, setTasks] = useState([]);
+    const [allTasks, setAllTasks] = useState([]);
     const [recentPayments, setRecentPayments] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [notifications, setNotifications] = useState([]);
+    const [showNotifications, setShowNotifications] = useState(false);
 
-    // Smart greeting based on time of day
     const getGreeting = () => {
-        const hour = new Date().getHours();
-        if (hour < 12) return '🌅 Good Morning';
-        if (hour < 17) return '☀️ Good Afternoon';
+        const h = new Date().getHours();
+        if (h < 12) return '🌅 Good Morning';
+        if (h < 17) return '☀️ Good Afternoon';
         return '🌙 Good Evening';
     };
 
-    // Smart date display
     const today = new Date().toLocaleDateString('en-IN', {
         weekday: 'long', year: 'numeric',
         month: 'long', day: 'numeric'
     });
 
+    const isOverdue = (dueDate) => dueDate && new Date(dueDate) < new Date();
+
     useEffect(() => {
-        const fetchStats = async () => {
+        const fetchData = async () => {
             try {
                 const [clientsRes, tasksRes, paymentsRes, summaryRes] = await Promise.all([
                     axios.get('/clients'),
@@ -49,173 +54,324 @@ function Dashboard() {
                     totalOverdue: summaryRes.data.totalOverdue,
                 });
 
-                // Smart — show only pending/in-progress tasks
+                setAllTasks(tasksRes.data);
                 setTasks(tasksRes.data.filter(t => t.status !== 'Done').slice(0, 5));
+                setRecentPayments(paymentsRes.data.slice(0, 4));
 
-                // Smart — show 3 most recent payments
-                setRecentPayments(paymentsRes.data.slice(0, 3));
+                // Smart notifications
+                const notifs = [];
+                const overdueTasks = tasksRes.data.filter(t =>
+                    t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'Done'
+                );
+                if (overdueTasks.length > 0) {
+                    notifs.push({ type: 'error', message: `${overdueTasks.length} task(s) are overdue!`, link: '/tasks' });
+                }
+                if (summaryRes.data.totalOverdue > 0) {
+                    notifs.push({ type: 'warning', message: `₹${summaryRes.data.totalOverdue} in overdue payments`, link: '/payments' });
+                }
+                if (summaryRes.data.totalPending > 0) {
+                    notifs.push({ type: 'info', message: `₹${summaryRes.data.totalPending} pending payment(s)`, link: '/payments' });
+                }
+                if (clientsRes.data.length === 0) {
+                    notifs.push({ type: 'info', message: 'Add your first client to get started!', link: '/clients' });
+                }
+                setNotifications(notifs);
 
             } catch (error) {
-                console.error('Error fetching stats:', error);
+                console.error(error);
             } finally {
                 setLoading(false);
             }
         };
-        fetchStats();
+        fetchData();
     }, []);
 
-    // Smart — auto detect overdue tasks by comparing dates
-    const isOverdue = (dueDate) => {
-        if (!dueDate) return false;
-        return new Date(dueDate) < new Date();
-    };
+    // Chart Data
+    const taskStatusData = [
+        { name: 'To-Do', value: allTasks.filter(t => t.status === 'To-Do').length, color: '#94A3B8' },
+        { name: 'In Progress', value: allTasks.filter(t => t.status === 'In Progress').length, color: '#3B82F6' },
+        { name: 'Done', value: allTasks.filter(t => t.status === 'Done').length, color: '#10B981' },
+    ];
+
+    const paymentChartData = [
+        { name: 'Earned', amount: stats.totalEarned, fill: '#10B981' },
+        { name: 'Pending', amount: stats.totalPending, fill: '#F59E0B' },
+        { name: 'Overdue', amount: stats.totalOverdue, fill: '#EF4444' },
+    ];
+
+    const taskPriorityData = [
+        { name: 'High', value: allTasks.filter(t => t.priority === 'High').length, color: '#EF4444' },
+        { name: 'Medium', value: allTasks.filter(t => t.priority === 'Medium').length, color: '#F59E0B' },
+        { name: 'Low', value: allTasks.filter(t => t.priority === 'Low').length, color: '#10B981' },
+    ];
+
+    // Task completion progress
+    const completedTasks = allTasks.filter(t => t.status === 'Done').length;
+    const progressPercent = allTasks.length > 0
+        ? Math.round((completedTasks / allTasks.length) * 100)
+        : 0;
 
     const priorityColor = (p) => ({
-        'High':   'bg-red-100 text-red-600',
+        'High': 'bg-red-100 text-red-600',
         'Medium': 'bg-yellow-100 text-yellow-700',
-        'Low':    'bg-green-100 text-green-600',
+        'Low': 'bg-green-100 text-green-600',
     }[p] || 'bg-gray-100 text-gray-600');
 
     const statusColor = (s) => ({
-        'To-Do':       'bg-gray-100 text-gray-500',
+        'To-Do': 'bg-gray-100 text-gray-500',
         'In Progress': 'bg-blue-100 text-blue-600',
-        'Done':        'bg-green-100 text-green-600',
+        'Done': 'bg-green-100 text-green-600',
     }[s] || 'bg-gray-100 text-gray-500');
+
+    const notifColor = (type) => ({
+        'error': 'bg-red-50 border-red-200 text-red-700',
+        'warning': 'bg-yellow-50 border-yellow-200 text-yellow-700',
+        'info': 'bg-blue-50 border-blue-200 text-blue-700',
+    }[type]);
+
+    const notifIcon = (type) => ({
+        'error': '🚨', 'warning': '⚠️', 'info': 'ℹ️'
+    }[type]);
 
     return (
         <div className="flex min-h-screen bg-gray-50">
             <Sidebar />
-
             <div className="flex-1 p-8 ml-64">
 
-                {/* ── HEADER ─────────────────────────────── */}
+                {/* ── HEADER ─────────────────────────── */}
                 <div className="flex items-center justify-between mb-8">
                     <div>
                         <p className="mb-1 text-sm font-medium text-blue-500">
-                            {getGreeting()}, {user?.name}! 👋
+                            {getGreeting()}, {user?.name}!
                         </p>
-                        <h1 className="text-3xl font-bold text-gray-900">
-                            Dashboard
-                        </h1>
+                        <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
                         <p className="mt-1 text-sm text-gray-400">{today}</p>
                     </div>
 
-                    {/* Smart — Platform Health Score */}
-                    <div className="px-6 py-4 text-center bg-white border border-gray-100 shadow-sm rounded-2xl">
-                        <p className="mb-1 text-xs font-medium text-gray-400">
-                            Platform Health
-                        </p>
-                        <p className={`text-2xl font-black ${
-                            stats.totalOverdue > 0 ? 'text-red-500' :
-                            stats.totalPending > 0 ? 'text-yellow-500' :
-                            'text-green-500'
-                        }`}>
-                            {stats.totalOverdue > 0 ? '⚠️ Alert' :
-                             stats.totalPending > 0 ? '🔔 Good' : '✅ Great'}
-                        </p>
-                        <p className="mt-1 text-xs text-gray-400">
-                            {stats.totalOverdue > 0
-                                ? `₹${stats.totalOverdue} overdue`
-                                : 'All on track!'}
-                        </p>
+                    <div className="flex items-center gap-3">
+                        {/* Notifications Bell */}
+                        <div className="relative">
+                            <button
+                                onClick={() => setShowNotifications(!showNotifications)}
+                                className="relative flex items-center justify-center w-10 h-10 transition bg-white border border-gray-200 shadow-sm rounded-xl hover:bg-gray-50"
+                            >
+                                <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                                </svg>
+                                {notifications.length > 0 && (
+                                    <span className="absolute flex items-center justify-center w-4 h-4 text-xs font-bold text-white bg-red-500 rounded-full -top-1 -right-1">
+                                        {notifications.length}
+                                    </span>
+                                )}
+                            </button>
+
+                            {/* Notification Dropdown */}
+                            {showNotifications && (
+                                <div className="absolute right-0 z-50 overflow-hidden bg-white border border-gray-100 shadow-xl top-12 w-80 rounded-2xl">
+                                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                                        <h3 className="text-sm font-bold text-gray-800">Notifications</h3>
+                                        <span className="text-xs text-gray-400">{notifications.length} alerts</span>
+                                    </div>
+                                    {notifications.length === 0 ? (
+                                        <div className="p-6 text-center">
+                                            <p className="mb-1 text-2xl">🎉</p>
+                                            <p className="text-sm text-gray-400">All caught up!</p>
+                                        </div>
+                                    ) : (
+                                        <div className="overflow-y-auto max-h-64">
+                                            {notifications.map((n, i) => (
+                                                <Link
+                                                    key={i}
+                                                    to={n.link}
+                                                    onClick={() => setShowNotifications(false)}
+                                                    className={`flex items-center gap-3 px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition ${notifColor(n.type)}`}
+                                                >
+                                                    <span>{notifIcon(n.type)}</span>
+                                                    <p className="text-sm font-medium">{n.message}</p>
+                                                </Link>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Health Score */}
+                        <div className="px-5 py-3 text-center bg-white border border-gray-100 shadow-sm rounded-xl">
+                            <p className="text-xs font-medium text-gray-400">Platform Health</p>
+                            <p className={`text-lg font-black mt-0.5 ${
+                                stats.totalOverdue > 0 ? 'text-red-500' :
+                                stats.totalPending > 0 ? 'text-yellow-500' : 'text-green-500'
+                            }`}>
+                                {stats.totalOverdue > 0 ? '⚠️ Alert' :
+                                 stats.totalPending > 0 ? '🔔 Good' : '✅ Great'}
+                            </p>
+                        </div>
                     </div>
                 </div>
 
                 {loading ? (
                     <div className="flex items-center justify-center h-64">
                         <div className="text-center">
-                            <div className="mb-3 text-4xl">⏳</div>
+                            <div className="mb-3 text-4xl animate-bounce">⏳</div>
                             <p className="text-gray-400">Loading your workspace...</p>
                         </div>
                     </div>
                 ) : (
                     <>
-                        {/* ── STATS CARDS ───────────────────────── */}
-                        <div className="grid grid-cols-2 gap-4 mb-8 md:grid-cols-4">
-
-                            <div className="p-5 transition bg-white border border-gray-100 shadow-sm rounded-2xl hover:shadow-md">
-                                <div className="flex items-center justify-between mb-3">
-                                    <div className="flex items-center justify-center w-10 h-10 text-xl bg-blue-50 rounded-xl">👥</div>
-                                    <span className="px-2 py-1 text-xs font-medium text-blue-500 rounded-full bg-blue-50">Clients</span>
-                                </div>
-                                <p className="text-3xl font-black text-gray-800">{stats.totalClients}</p>
-                                <p className="mt-1 text-sm text-gray-400">Total Clients</p>
-                            </div>
-
-                            <div className="p-5 transition bg-white border border-gray-100 shadow-sm rounded-2xl hover:shadow-md">
-                                <div className="flex items-center justify-between mb-3">
-                                    <div className="flex items-center justify-center w-10 h-10 text-xl bg-green-50 rounded-xl">✅</div>
-                                    <span className="px-2 py-1 text-xs font-medium text-green-500 rounded-full bg-green-50">Tasks</span>
-                                </div>
-                                <p className="text-3xl font-black text-gray-800">{stats.totalTasks}</p>
-                                <p className="mt-1 text-sm text-gray-400">Total Tasks</p>
-                            </div>
-
-                            <div className="p-5 transition shadow-sm bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl hover:shadow-md">
-                                <div className="flex items-center justify-between mb-3">
-                                    <div className="flex items-center justify-center w-10 h-10 text-xl bg-white bg-opacity-20 rounded-xl">💰</div>
-                                    <span className="px-2 py-1 text-xs font-medium text-white bg-white rounded-full bg-opacity-20">Earned</span>
-                                </div>
-                                <p className="text-3xl font-black text-white">₹{stats.totalEarned}</p>
-                                <p className="mt-1 text-sm text-purple-200">Total Earned</p>
-                            </div>
-
-                            <div className={`rounded-2xl p-5 shadow-sm hover:shadow-md transition ${
-                                stats.totalOverdue > 0
-                                    ? 'bg-gradient-to-br from-red-500 to-red-600'
-                                    : 'bg-gradient-to-br from-orange-400 to-orange-500'
-                            }`}>
-                                <div className="flex items-center justify-between mb-3">
-                                    <div className="flex items-center justify-center w-10 h-10 text-xl bg-white bg-opacity-20 rounded-xl">
-                                        {stats.totalOverdue > 0 ? '🚨' : '⏳'}
+                        {/* ── STATS CARDS ─────────────────── */}
+                        <div className="grid grid-cols-2 gap-4 mb-6 md:grid-cols-4">
+                            {[
+                                { label: 'Total Clients', value: stats.totalClients, icon: '👥', color: 'text-blue-600', bg: 'bg-blue-50', tag: 'Clients', tagColor: 'text-blue-500 bg-blue-50' },
+                                { label: 'Total Tasks', value: stats.totalTasks, icon: '✅', color: 'text-green-600', bg: 'bg-green-50', tag: 'Tasks', tagColor: 'text-green-500 bg-green-50' },
+                                { label: 'Total Earned', value: `₹${stats.totalEarned}`, icon: '💰', color: 'text-white', bg: 'bg-gradient-to-br from-purple-500 to-purple-600', tag: 'Earned', tagColor: 'text-white bg-white bg-opacity-20', gradient: true },
+                                { label: 'Pending', value: `₹${stats.totalPending}`, icon: '⏳', color: 'text-white', bg: 'bg-gradient-to-br from-orange-400 to-orange-500', tag: 'Pending', tagColor: 'text-white bg-white bg-opacity-20', gradient: true },
+                            ].map((card) => (
+                                <div key={card.label} className={`${card.bg} rounded-2xl p-5 shadow-sm hover:shadow-md transition`}>
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div className={`w-10 h-10 ${card.gradient ? 'bg-white bg-opacity-20' : card.bg} rounded-xl flex items-center justify-center text-xl`}>
+                                            {card.icon}
+                                        </div>
+                                        <span className={`text-xs font-medium px-2 py-1 rounded-full ${card.tagColor}`}>
+                                            {card.tag}
+                                        </span>
                                     </div>
-                                    <span className="px-2 py-1 text-xs font-medium text-white bg-white rounded-full bg-opacity-20">
-                                        {stats.totalOverdue > 0 ? 'Overdue' : 'Pending'}
-                                    </span>
+                                    <p className={`text-3xl font-black ${card.color}`}>{card.value}</p>
+                                    <p className={`text-sm mt-1 ${card.gradient ? 'text-white text-opacity-80' : 'text-gray-400'}`}>
+                                        {card.label}
+                                    </p>
                                 </div>
-                                <p className="text-3xl font-black text-white">
-                                    ₹{stats.totalOverdue > 0 ? stats.totalOverdue : stats.totalPending}
-                                </p>
-                                <p className="mt-1 text-sm text-orange-100">
-                                    {stats.totalOverdue > 0 ? 'Overdue Amount' : 'Pending Amount'}
-                                </p>
-                            </div>
-
+                            ))}
                         </div>
 
-                        {/* ── SMART ALERT BANNER ────────────────── */}
+                        {/* ── TASK PROGRESS BAR ───────────── */}
+                        <div className="p-6 mb-6 bg-white border border-gray-100 shadow-sm rounded-2xl">
+                            <div className="flex items-center justify-between mb-3">
+                                <div>
+                                    <h3 className="font-bold text-gray-800">Task Completion Progress</h3>
+                                    <p className="text-gray-400 text-sm mt-0.5">
+                                        {completedTasks} of {allTasks.length} tasks completed
+                                    </p>
+                                </div>
+                                <span className={`text-2xl font-black ${
+                                    progressPercent === 100 ? 'text-green-500' :
+                                    progressPercent > 50 ? 'text-blue-500' : 'text-orange-500'
+                                }`}>
+                                    {progressPercent}%
+                                </span>
+                            </div>
+                            <div className="w-full h-3 overflow-hidden bg-gray-100 rounded-full">
+                                <div
+                                    className={`h-full rounded-full transition-all duration-700 ${
+                                        progressPercent === 100 ? 'bg-green-500' :
+                                        progressPercent > 50 ? 'bg-blue-500' : 'bg-orange-400'
+                                    }`}
+                                    style={{ width: `${progressPercent}%` }}
+                                />
+                            </div>
+                            <div className="flex justify-between mt-2">
+                                {taskStatusData.map(s => (
+                                    <div key={s.name} className="flex items-center gap-1.5">
+                                        <div className="w-2 h-2 rounded-full" style={{ background: s.color }} />
+                                        <span className="text-xs text-gray-400">{s.name}: {s.value}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* ── ALERT BANNER ────────────────── */}
                         {stats.totalOverdue > 0 && (
                             <div className="flex items-center gap-3 p-4 mb-6 border border-red-200 bg-red-50 rounded-2xl">
                                 <span className="text-2xl">🚨</span>
                                 <div className="flex-1">
                                     <p className="font-bold text-red-700">Action Required!</p>
-                                    <p className="text-sm text-red-500">
-                                        You have ₹{stats.totalOverdue} in overdue payments. Follow up with your clients!
-                                    </p>
+                                    <p className="text-sm text-red-500">₹{stats.totalOverdue} in overdue payments — follow up with clients!</p>
                                 </div>
-                                <Link
-                                    to="/payments"
-                                    className="px-4 py-2 text-sm font-medium text-white transition bg-red-500 rounded-lg hover:bg-red-600"
-                                >
+                                <Link to="/payments" className="px-4 py-2 text-sm font-medium text-white transition bg-red-500 rounded-lg hover:bg-red-600">
                                     View Now
                                 </Link>
                             </div>
                         )}
 
-                        {/* ── TWO COLUMN LAYOUT ─────────────────── */}
+                        {/* ── CHARTS ROW ──────────────────── */}
+                        <div className="grid grid-cols-1 gap-6 mb-6 md:grid-cols-3">
+
+                            {/* Payment Bar Chart */}
+                            <div className="p-6 bg-white border border-gray-100 shadow-sm md:col-span-2 rounded-2xl">
+                                <h3 className="mb-1 font-bold text-gray-800">Payment Overview</h3>
+                                <p className="mb-4 text-xs text-gray-400">Earned vs Pending vs Overdue</p>
+                                <ResponsiveContainer width="100%" height={200}>
+                                    <BarChart data={paymentChartData} barSize={50}>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
+                                        <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
+                                        <YAxis tick={{ fontSize: 12, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
+                                        <Tooltip
+                                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
+                                            formatter={(value) => [`₹${value}`, 'Amount']}
+                                        />
+                                        <Bar dataKey="amount" radius={[8, 8, 0, 0]}>
+                                            {paymentChartData.map((entry, index) => (
+                                                <Cell key={index} fill={entry.fill} />
+                                            ))}
+                                        </Bar>
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+
+                            {/* Task Pie Chart */}
+                            <div className="p-6 bg-white border border-gray-100 shadow-sm rounded-2xl">
+                                <h3 className="mb-1 font-bold text-gray-800">Task Status</h3>
+                                <p className="mb-2 text-xs text-gray-400">Distribution by status</p>
+                                {allTasks.length === 0 ? (
+                                    <div className="flex items-center justify-center h-40">
+                                        <p className="text-sm text-gray-400">No tasks yet</p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <ResponsiveContainer width="100%" height={160}>
+                                            <PieChart>
+                                                <Pie
+                                                    data={taskStatusData}
+                                                    cx="50%" cy="50%"
+                                                    innerRadius={45}
+                                                    outerRadius={70}
+                                                    paddingAngle={4}
+                                                    dataKey="value"
+                                                >
+                                                    {taskStatusData.map((entry, index) => (
+                                                        <Cell key={index} fill={entry.color} />
+                                                    ))}
+                                                </Pie>
+                                                <Tooltip
+                                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
+                                                />
+                                            </PieChart>
+                                        </ResponsiveContainer>
+                                        <div className="flex flex-col gap-1.5 mt-2">
+                                            {taskStatusData.map(s => (
+                                                <div key={s.name} className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: s.color }} />
+                                                        <span className="text-xs text-gray-500">{s.name}</span>
+                                                    </div>
+                                                    <span className="text-xs font-bold text-gray-700">{s.value}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* ── PRIORITY PIE + PENDING TASKS ── */}
                         <div className="grid grid-cols-1 gap-6 mb-6 md:grid-cols-2">
 
-                            {/* Pending Tasks Widget */}
+                            {/* Pending Tasks */}
                             <div className="p-6 bg-white border border-gray-100 shadow-sm rounded-2xl">
                                 <div className="flex items-center justify-between mb-4">
-                                    <h3 className="text-lg font-bold text-gray-800">
-                                        📋 Pending Tasks
-                                    </h3>
-                                    <Link to="/tasks" className="text-sm text-blue-500 hover:underline">
-                                        View all →
-                                    </Link>
+                                    <h3 className="font-bold text-gray-800">📋 Pending Tasks</h3>
+                                    <Link to="/tasks" className="text-sm text-blue-500 hover:underline">View all →</Link>
                                 </div>
-
                                 {tasks.length === 0 ? (
                                     <div className="py-8 text-center">
                                         <p className="mb-2 text-3xl">🎉</p>
@@ -224,9 +380,7 @@ function Dashboard() {
                                 ) : (
                                     tasks.map(task => (
                                         <div key={task._id} className="flex items-center gap-3 py-3 border-b border-gray-50 last:border-0">
-                                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                                                isOverdue(task.dueDate) ? 'bg-red-500' : 'bg-blue-400'
-                                            }`} />
+                                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isOverdue(task.dueDate) ? 'bg-red-500' : 'bg-blue-400'}`} />
                                             <div className="flex-1 min-w-0">
                                                 <p className="text-sm font-medium text-gray-800 truncate">
                                                     {task.title}
@@ -239,30 +393,21 @@ function Dashboard() {
                                                     {task.dueDate && ` · Due ${new Date(task.dueDate).toLocaleDateString()}`}
                                                 </p>
                                             </div>
-                                            <div className="flex flex-shrink-0 gap-2">
-                                                <span className={`text-xs px-2 py-1 rounded-full ${priorityColor(task.priority)}`}>
-                                                    {task.priority}
-                                                </span>
-                                                <span className={`text-xs px-2 py-1 rounded-full ${statusColor(task.status)}`}>
-                                                    {task.status}
-                                                </span>
+                                            <div className="flex gap-1.5 flex-shrink-0">
+                                                <span className={`text-xs px-2 py-1 rounded-full ${priorityColor(task.priority)}`}>{task.priority}</span>
+                                                <span className={`text-xs px-2 py-1 rounded-full ${statusColor(task.status)}`}>{task.status}</span>
                                             </div>
                                         </div>
                                     ))
                                 )}
                             </div>
 
-                            {/* Recent Payments Widget */}
+                            {/* Recent Payments */}
                             <div className="p-6 bg-white border border-gray-100 shadow-sm rounded-2xl">
                                 <div className="flex items-center justify-between mb-4">
-                                    <h3 className="text-lg font-bold text-gray-800">
-                                        💳 Recent Payments
-                                    </h3>
-                                    <Link to="/payments" className="text-sm text-blue-500 hover:underline">
-                                        View all →
-                                    </Link>
+                                    <h3 className="font-bold text-gray-800">💳 Recent Payments</h3>
+                                    <Link to="/payments" className="text-sm text-blue-500 hover:underline">View all →</Link>
                                 </div>
-
                                 {recentPayments.length === 0 ? (
                                     <div className="py-8 text-center">
                                         <p className="mb-2 text-3xl">💸</p>
@@ -271,7 +416,7 @@ function Dashboard() {
                                 ) : (
                                     recentPayments.map(payment => (
                                         <div key={payment._id} className="flex items-center gap-3 py-3 border-b border-gray-50 last:border-0">
-                                            <div className="flex items-center justify-center flex-shrink-0 w-10 h-10 text-lg bg-purple-50 rounded-xl">
+                                            <div className="flex items-center justify-center flex-shrink-0 text-base w-9 h-9 bg-purple-50 rounded-xl">
                                                 💰
                                             </div>
                                             <div className="flex-1 min-w-0">
@@ -283,9 +428,9 @@ function Dashboard() {
                                                 </p>
                                             </div>
                                             <div className="flex-shrink-0 text-right">
-                                                <p className="font-bold text-gray-800">₹{payment.amount}</p>
-                                                <span className={`text-xs px-2 py-1 rounded-full ${
-                                                    payment.status === 'Paid'    ? 'bg-green-100 text-green-600' :
+                                                <p className="text-sm font-bold text-gray-800">₹{payment.amount}</p>
+                                                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                                    payment.status === 'Paid' ? 'bg-green-100 text-green-600' :
                                                     payment.status === 'Pending' ? 'bg-yellow-100 text-yellow-600' :
                                                     'bg-red-100 text-red-600'
                                                 }`}>
@@ -296,45 +441,35 @@ function Dashboard() {
                                     ))
                                 )}
                             </div>
-
                         </div>
 
-                        {/* ── QUICK ACTIONS ─────────────────────── */}
+                        {/* ── QUICK ACTIONS ───────────────── */}
                         <div className="p-6 bg-white border border-gray-100 shadow-sm rounded-2xl">
-                            <h3 className="mb-4 text-lg font-bold text-gray-800">
-                                ⚡ Quick Actions
-                            </h3>
+                            <h3 className="mb-4 text-base font-bold text-gray-800">⚡ Quick Actions</h3>
                             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                                 <Link to="/clients" className="flex items-center gap-4 p-4 transition group bg-blue-50 rounded-xl hover:bg-blue-100">
-                                    <div className="flex items-center justify-center w-12 h-12 text-2xl transition bg-blue-500 shadow-sm rounded-xl group-hover:scale-110">
-                                        👥
-                                    </div>
+                                    <div className="flex items-center justify-center text-xl transition bg-blue-500 shadow-sm w-11 h-11 rounded-xl group-hover:scale-110">👥</div>
                                     <div>
-                                        <p className="font-bold text-blue-700">Manage Clients</p>
+                                        <p className="text-sm font-bold text-blue-700">Manage Clients</p>
                                         <p className="text-xs text-blue-400">{stats.totalClients} clients</p>
                                     </div>
                                 </Link>
                                 <Link to="/tasks" className="flex items-center gap-4 p-4 transition group bg-green-50 rounded-xl hover:bg-green-100">
-                                    <div className="flex items-center justify-center w-12 h-12 text-2xl transition bg-green-500 shadow-sm rounded-xl group-hover:scale-110">
-                                        ✅
-                                    </div>
+                                    <div className="flex items-center justify-center text-xl transition bg-green-500 shadow-sm w-11 h-11 rounded-xl group-hover:scale-110">✅</div>
                                     <div>
-                                        <p className="font-bold text-green-700">Manage Tasks</p>
+                                        <p className="text-sm font-bold text-green-700">Manage Tasks</p>
                                         <p className="text-xs text-green-400">{stats.totalTasks} tasks</p>
                                     </div>
                                 </Link>
                                 <Link to="/payments" className="flex items-center gap-4 p-4 transition group bg-purple-50 rounded-xl hover:bg-purple-100">
-                                    <div className="flex items-center justify-center w-12 h-12 text-2xl transition bg-purple-500 shadow-sm rounded-xl group-hover:scale-110">
-                                        💰
-                                    </div>
+                                    <div className="flex items-center justify-center text-xl transition bg-purple-500 shadow-sm w-11 h-11 rounded-xl group-hover:scale-110">💰</div>
                                     <div>
-                                        <p className="font-bold text-purple-700">Manage Payments</p>
+                                        <p className="text-sm font-bold text-purple-700">Manage Payments</p>
                                         <p className="text-xs text-purple-400">₹{stats.totalEarned} earned</p>
                                     </div>
                                 </Link>
                             </div>
                         </div>
-
                     </>
                 )}
             </div>

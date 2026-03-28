@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard';
 import Clients from './pages/Clients';
 import Tasks from './pages/Tasks';
 import Payments from './pages/Payments';
+import Profile from './pages/Profile';
 
 // Protected Route Component
 // Only logged in users can access these pages
@@ -49,6 +50,12 @@ function App() {
                 <Route path="/payments" element={
                     <PrivateRoute>
                         <Payments />
+                    </PrivateRoute>
+                } />
+
+                <Route path="/profile" element={
+                    <PrivateRoute>
+                        <Profile />
                     </PrivateRoute>
                 } />
 
