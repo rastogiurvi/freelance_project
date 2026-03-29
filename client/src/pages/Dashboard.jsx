@@ -105,7 +105,7 @@ function Dashboard() {
         ? Math.round((completedTasks / allTasks.length) * 100)
         : 0;
 
-    // ✅ NEW: calculate trend vs last month
+   
     const currentMonthEarned = monthlyData[monthlyData.length - 1]?.earned || 0;
     const lastMonthEarned = monthlyData[monthlyData.length - 2]?.earned || 0;
     const trendPercent = lastMonthEarned === 0
@@ -135,7 +135,7 @@ function Dashboard() {
         'error': '🚨', 'warning': '⚠️', 'info': 'ℹ️'
     }[type]);
 
-    // ✅ Custom tooltip for monthly chart
+   
     const MonthlyTooltip = ({ active, payload, label }) => {
         if (active && payload && payload.length) {
             return (
