@@ -21,7 +21,7 @@ function Dashboard() {
     const [loading, setLoading] = useState(true);
     const [notifications, setNotifications] = useState([]);
     const [showNotifications, setShowNotifications] = useState(false);
-    const [monthlyData, setMonthlyData] = useState([]); // ✅ NEW
+    const [monthlyData, setMonthlyData] = useState([]); 
 
     const getGreeting = () => {
         const h = new Date().getHours();
